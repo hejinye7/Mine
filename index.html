@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>3D扫雷 · 战场行动</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#000;font-family:'Segoe UI','Microsoft YaHei',sans-serif}
+canvas{display:block}
+
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:10;width:40px;height:40px}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,0.5)}
+#crosshair::before{width:16px;height:1px;top:20px;left:12px}
+#crosshair::after{width:1px;height:16px;top:12px;left:20px}
+#crosshair .dot{width:3px;height:3px;background:#e94560;border-radius:50%;position:absolute;top:18.5px;left:18.5px;box-shadow:0 0 6px #e94560}
+
+#menu-screen{position:fixed;inset:0;z-index:100;background:radial-gradient(ellipse at center,#1a2a1a,#0a0a0a);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.8s}
+#menu-screen.hidden{opacity:0;pointer-events:none}
+#menu-screen h1{font-size:48px;color:#e94560;letter-spacing:8px;text-shadow:0 0 40px rgba(233,69,96,0.6);margin-bottom:6px}
+#menu-screen .sub{color:#667;font-size:14px;letter-spacing:6px;margin-bottom:30px}
+#menu-screen .warn{color:#e94560;font-size:11px;margin-bottom:20px;border:1px solid #e94560;padding:6px 18px;border-radius:4px}
+.diff-btn{display:block;width:300px;margin:10px 0;padding:16px 24px;background:linear-gradient(135deg,#1a2a1a,#2a3a2a);border:1px solid #333;border-radius:6px;color:#ccc;font-size:16px;cursor:pointer;text-align:left;transition:all 0.3s;position:relative}
+.diff-btn:hover{border-color:#e94560;transform:translateX(6px);color:#fff}
+.diff-btn .info{font-size:11px;color:#888;margin-top:3px}
+.diff-btn .badge{position:absolute;right:18px;top:50%;transform:translateY(-50%);padding:3px 10px;border-radius:3px;font-size:11px}
+.diff-btn:nth-child(1) .badge{background:#1a3a1a;color:#5f5}
+.diff-btn:nth-child(2) .badge{background:#3a2a1a;color:#fa0}
+.diff-btn:nth-child(3) .badge{background:#3a1a1a;color:#f55}
+
+#hud{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:20;display:none;gap:24px;background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);padding:6px 18px;border-radius:6px;border:1px solid rgba(255,255,255,0.08)}
+#hud.on{display:flex}
+#hud .stat{text-align:center}
+#hud .stat .l{font-size:9px;color:#888;text-transform:uppercase}
+#hud .stat .v{font-size:18px;color:#fff;font-weight:bold}
+.v.red{color:#e94560}.v.gold{color:#ffd700}.v.cyan{color:#4fc3f7}
+
+#step-hint{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:15;padding:5px 12px;background:rgba(233,69,96,0.15);border:1px solid rgba(233,69,96,0.3);border-radius:4px;color:#e94560;font-size:12px;display:none;pointer-events:none;align-items:center;gap:8px}
+#step-hint .bar{display:inline-block;width:0;height:3px;background:#e94560;border-radius:2px;vertical-align:middle;transition:width 0.08s}
+
+#game-over{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);backdrop-filter:blur(4px)}
+#game-over.visible{display:flex}
+#game-over .panel{background:linear-gradient(135deg,#1a1a2e,#2a2a4e);border:1px solid #444;border-radius:16px;padding:36px 44px;text-align:center;max-width:400px}
+#game-over .panel h2{font-size:32px;margin-bottom:8px}
+#game-over .panel h2.win{color:#4caf50}
+#game-over .panel h2.lose{color:#e94560}
+#game-over .panel p{color:#aaa;margin-bottom:18px;font-size:13px}
+#game-over .panel button{padding:10px 24px;background:#e94560;border:none;border-radius:5px;color:#fff;font-size:14px;cursor:pointer;margin:0 6px}
+#game-over .panel button:hover{background:#ff6b81}
+#game-over .panel button.sec{background:#333}
+#game-over .panel button.sec:hover{background:#555}
+
+#instructions{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:14;background:rgba(0,0,0,0.4);padding:5px 14px;border-radius:5px;border:1px solid rgba(255,255,255,0.06);color:#777;font-size:11px;display:none;gap:12px}
+#instructions.on{display:flex}
+#instructions kbd{background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-family:monospace;font-size:10px}
+
+#loading{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:#0a0a0a;color:#e94560;font-size:16px;letter-spacing:2px}
+#loading.hidden{opacity:0;pointer-events:none;transition:opacity 0.4s}
+.spinner{width:36px;height:36px;border:3px solid rgba(233,69,96,0.15);border-top-color:#e94560;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== Mobile Controls ===== */
+.desktop-only{}
+.mobile-controls{display:none;position:fixed;inset:0;z-index:50;flex-direction:column}
+.mobile-controls.active{display:flex}
+@media (pointer:coarse){
+  .desktop-only{display:none!important}
+  .mobile-controls.active{display:flex}
+  #step-hint{bottom:140px}
+  #rotate-overlay.visible{display:flex}
+}
+#joystick-zone{position:fixed;left:16px;bottom:24px;width:130px;height:130px;z-index:55;touch-action:none}
+#joystick-base{width:100%;height:100%;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);position:relative;backdrop-filter:blur(4px)}
+#joystick-base::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:30px;background:rgba(255,255,255,0.06);border-radius:1px}
+#joystick-base::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:2px;background:rgba(255,255,255,0.06);border-radius:1px}
+#joystick-thumb{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle at 40% 35%,rgba(233,69,96,0.45),rgba(233,69,96,0.2));border:2px solid rgba(233,69,96,0.5);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);box-shadow:0 0 20px rgba(233,69,96,0.15);touch-action:none;transition:box-shadow 0.2s}
+/* Look zone */
+#look-zone{position:fixed;top:0;right:0;width:65%;height:100%;z-index:51;touch-action:none}
+.look-hint{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.12);font-size:13px;letter-spacing:4px;pointer-events:none;user-select:none;white-space:nowrap}
+/* Action buttons */
+#action-buttons{position:fixed;bottom:36px;right:16px;display:flex;gap:10px;z-index:56}
+.action-btn{width:62px;height:62px;border-radius:50%;border:2px solid;font-size:11px;font-weight:bold;color:#fff;cursor:pointer;background:rgba(0,0,0,0.35);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);transition:transform 0.1s;touch-action:none;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.3;user-select:none;-webkit-user-select:none}
+.action-btn:active{transform:scale(0.88);opacity:0.7}
+.action-btn .icon{font-size:18px}
+.action-btn .label{font-size:9px;opacity:0.8}
+.action-btn.reveal{border-color:rgba(76,175,80,0.5);box-shadow:0 0 15px rgba(76,175,80,0.1)}
+.action-btn.flag{border-color:rgba(233,69,96,0.5);box-shadow:0 0 15px rgba(233,69,96,0.1)}
+/* Touch flash */
+.touch-flash{position:fixed;pointer-events:none;z-index:52;width:8px;height:8px;border-radius:50%;background:rgba(233,69,96,0.25);transform:translate(-50%,-50%);animation:flashFade 0.4s ease-out forwards}
+@keyframes flashFade{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.5)}}
+
+/* Rotate device overlay */
+#rotate-overlay{position:fixed;inset:0;z-index:999;background:radial-gradient(ellipse at center,#1a2a1a,#0a0a0a);display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff}
+#rotate-overlay.visible{display:flex}
+#rotate-overlay .icon{font-size:64px;margin-bottom:20px;animation:rotatePhone 2s ease-in-out infinite}
+#rotate-overlay h2{color:#e94560;font-size:22px;margin-bottom:8px;letter-spacing:4px}
+#rotate-overlay p{color:#888;font-size:14px;text-align:center;line-height:1.8}
+@keyframes rotatePhone{0%,100%{transform:rotate(0deg)}50%{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div>加载战场...</div>
+
+<div id="menu-screen">
+<h1>⚔ 雷区行动</h1>
+<div class="sub">MINEFIELD OPERATION</div>
+<div class="warn">⚠ 警告：前方雷区 · 谨慎前行</div>
+<button class="diff-btn" onclick="startGame('beginner')">🟢 初级行动<span class="badge">8×8</span><div class="info">10枚地雷 · 小型雷场</div></button>
+<button class="diff-btn" onclick="startGame('intermediate')">🟡 中级行动<span class="badge">16×16</span><div class="info">40枚地雷 · 中型雷场</div></button>
+<button class="diff-btn" onclick="startGame('expert')">🔴 高级行动<span class="badge">30×16</span><div class="info">99枚地雷 · 死亡雷场</div></button>
+</div>
+
+<div id="hud">
+<div class="stat"><div class="l">💣 地雷</div><div class="v red" id="mc">0</div></div>
+<div class="stat"><div class="l">🚩 已标记</div><div class="v gold" id="fc">0</div></div>
+<div class="stat"><div class="l">⏱ 时间</div><div class="v cyan" id="tm">000</div></div>
+</div>
+
+<div id="crosshair"><div class="dot"></div></div>
+<div id="step-hint">⚡踏雷中<div class="bar"></div></div>
+
+<div id="instructions" class="on desktop-only">
+<span><kbd>W A S D</kbd> 移动</span><span><kbd>鼠标</kbd> 环顾</span><span><kbd>左键</kbd> 排雷</span><span><kbd>右键</kbd> 插旗</span><span><kbd>ESC</kbd> 释放</span>
+</div>
+
+<div id="game-over">
+<div class="panel">
+<h2 id="rt" class="win">🎉</h2><p id="rd"></p>
+<button onclick="restartGame()">🔄 再来一局</button>
+<button class="sec" onclick="backToMenu()">📋 菜单</button>
+</div></div>
+
+<!-- Mobile Controls -->
+<div id="mobile-controls" class="mobile-controls">
+  <div id="joystick-zone">
+    <div id="joystick-base"><div id="joystick-thumb"></div></div>
+  </div>
+  <div id="look-zone">
+    <div class="look-hint">👆 滑动环顾</div>
+  </div>
+  <div id="action-buttons">
+    <button class="action-btn reveal" id="btn-reveal"><span class="icon">💣</span><span class="label">排雷</span></button>
+    <button class="action-btn flag" id="btn-flag"><span class="icon">🚩</span><span class="label">插旗</span></button>
+  </div>
+</div>
+
+<!-- Rotate Device Overlay -->
+<div id="rotate-overlay">
+  <div class="icon">📱</div>
+  <h2>请旋转屏幕</h2>
+  <p>请将设备切换为<strong>横屏</strong>模式<br>以体验 3D 扫雷战场行动</p>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ============================================================
+// CONFIG
+// ============================================================
+const DIFF={beginner:{rows:8,cols:8,mines:10},intermediate:{rows:16,cols:16,mines:40},expert:{rows:16,cols:30,mines:99}};
+const CELL=2.4;   // Distance between cell centers
+const RING_R=0.55; // Ground marker ring radius
+const TRIGGER=0.65;// Step-on trigger distance
+const SPEED=2.8;
+
+let G={diff:null,rows:0,cols:0,mines:0,grid:[],flags:0,revealed:0,firstClick:true,over:false,won:false,timer:0,timerId:null,startTime:null};
+let mobileMode=matchMedia('(pointer:coarse)').matches;
+
+// ============================================================
+// SCENE
+// ============================================================
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87CEEB);
+scene.fog=new THREE.FogExp2(0x87CEEB,0.005);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,200);
+camera.position.set(0,1.7,0);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.1;
+document.body.prepend(renderer.domElement);
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),0.25,0.15,0.05);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ============================================================
+// FPS CAMERA — Euler YXZ, no frame skips, smooth mouse
+// ============================================================
+const _euler=new THREE.Euler(0,0,0,'YXZ');
+let yaw=0,pitch=0,pointerLocked=false;
+const PITCH_MIN=-1.4,PITCH_MAX=0.7;
+const can=renderer.domElement;
+
+can.addEventListener('click',()=>{
+  if(mobileMode||!G.diff||G.over||pointerLocked)return;
+  can.requestPointerLock();
+});
+document.addEventListener('pointerlockchange',()=>{
+  pointerLocked=document.pointerLockElement===can;
+  const i=document.getElementById('instructions');
+  if(!mobileMode)i.classList.toggle('on',!pointerLocked&&!G.over&&G.diff);else i.classList.remove('on');
+});
+document.addEventListener('mousemove',e=>{
+  if(!pointerLocked||mobileMode)return;
+  yaw-=e.movementX*0.002;
+  pitch=Math.max(PITCH_MIN,Math.min(PITCH_MAX,pitch-e.movementY*0.002));
+});
+function updateCam(){
+  // Keep yaw in [-π, π] without snapping — gradual drift correction
+  if(yaw>Math.PI){yaw-=Math.PI*2}
+  else if(yaw<-Math.PI){yaw+=Math.PI*2}
+  _euler.set(pitch,yaw,0);
+  camera.quaternion.setFromEuler(_euler);
+}
+
+// ============================================================
+// LIGHTING
+// ============================================================
+scene.add(new THREE.AmbientLight(0x404060,0.5));
+scene.add(new THREE.HemisphereLight(0x87CEEB,0x6a5535,0.7));
+const sun=new THREE.DirectionalLight(0xFFE4B5,2.2);
+sun.position.set(25,30,-15); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-40;sun.shadow.camera.right=40;sun.shadow.camera.top=40;sun.shadow.camera.bottom=-40;sun.shadow.camera.near=0.3;sun.shadow.camera.far=80;
+scene.add(sun);
+scene.add(new THREE.DirectionalLight(0x8899bb,0.35).position.set(-10,8,10));
+
+// ============================================================
+// GROUND - Procedural battlefield terrain
+// ============================================================
+const gcv=document.createElement('canvas'); gcv.width=gcv.height=512;
+const gc=gcv.getContext('2d');
+gc.fillStyle='#7a6545'; gc.fillRect(0,0,512,512);
+for(let i=0;i<15000;i++){const s=Math.random()*35;gc.fillStyle=`rgba(${85+s},${65+s},${35+s},0.3)`;gc.fillRect(Math.random()*512,Math.random()*512,Math.random()*3+2,Math.random()*3+2)}
+for(let i=0;i<400;i++){gc.fillStyle=`rgba(${110+Math.random()*50},${90+Math.random()*40},${50+Math.random()*30},0.45)`;gc.beginPath();gc.arc(Math.random()*512,Math.random()*512,Math.random()*5+2,0,Math.PI*2);gc.fill()}
+const gtex=new THREE.CanvasTexture(gcv); gtex.wrapS=gtex.wrapT=THREE.RepeatWrapping; gtex.repeat.set(12,12);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({map:gtex,color:0x9a8555,roughness:0.95,metalness:0}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-0.03; ground.receiveShadow=true; scene.add(ground);
+
+// Grid lines (faint tactical overlay)
+const gh=new THREE.GridHelper(80,80,0x5a4a35,0x5a4a35);
+gh.position.y=0.001; gh.material.transparent=true; gh.material.opacity=0.1; scene.add(gh);
+
+// Rocks, hills, posts
+for(let i=0;i<60;i++){const r=new THREE.Mesh(new THREE.DodecahedronGeometry(0.04+Math.random()*0.14),new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08,0.08,0.22+Math.random()*0.28),roughness:0.9}));r.position.set((Math.random()-0.5)*55,0,(Math.random()-0.5)*55);r.rotation.set(Math.random()*6,Math.random()*6,Math.random()*6);r.receiveShadow=r.castShadow=true;scene.add(r)}
+function hill(x,z,s){const m=new THREE.Mesh(new THREE.SphereGeometry(s,8,6,0,Math.PI*2,0,Math.PI/2),new THREE.MeshStandardMaterial({color:0x4a6a3a,roughness:1}));m.position.set(x,-0.2,z);m.scale.set(1,0.25,1);m.receiveShadow=true;scene.add(m)}
+hill(-22,-22,5);hill(30,-18,7);hill(-24,26,6);hill(32,27,4);
+function post(x,z){const p=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.05,0.7,6),new THREE.MeshStandardMaterial({color:0x554433,roughness:0.8}));p.position.set(x,0.35,z);p.castShadow=true;scene.add(p)}
+for(let i=-26;i<=26;i+=4){post(i,-26);post(i,26);post(-26,i);post(26,i)}
+
+// Dust motes
+const dN=150,dG=new THREE.BufferGeometry(),dP=new Float32Array(dN*3);
+for(let i=0;i<dN*3;i++)dP[i]=(Math.random()-0.5)*60;
+dG.setAttribute('position',new THREE.BufferAttribute(dP,3));
+const dust=new THREE.Points(dG,new THREE.PointsMaterial({color:0xffffff,size:0.025,transparent:true,opacity:0.1,depthWrite:false,blending:THREE.AdditiveBlending}));
+dust.position.y=1; scene.add(dust);
+
+// ============================================================
+// CELL POSITION
+// ============================================================
+function cellPos(r,c){
+  const tw=G.cols*CELL,tw2=tw/2;
+  const th=G.rows*CELL,th2=th/2;
+  return{x:-tw2+c*CELL+CELL/2,z:-th2+r*CELL+CELL/2};
+}
+
+// ============================================================
+// MODEL: Ground marker ring (survey / detection ring)
+// ============================================================
+function makeRing(){
+  const g=new THREE.Group();
+  // Thin metal ring flush with ground
+  const rm=new THREE.MeshStandardMaterial({color:0x6a6a5a,roughness:0.4,metalness:0.7});
+  const r1=new THREE.Mesh(new THREE.TorusGeometry(RING_R,0.015,6,24),rm);
+  r1.rotation.x=Math.PI/2; r1.position.y=0.01; r1.receiveShadow=true; g.add(r1);
+  // Inner subtle ring
+  const r2=new THREE.Mesh(new THREE.TorusGeometry(RING_R*0.7,0.008,4,16),new THREE.MeshStandardMaterial({color:0x5a5a4a,roughness:0.5,metalness:0.6}));
+  r2.rotation.x=Math.PI/2; r2.position.y=0.008; g.add(r2);
+  // Center dot
+  const dot=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.005,6),new THREE.MeshStandardMaterial({color:0x888877,roughness:0.3,metalness:0.8}));
+  dot.position.y=0.005; g.add(dot);
+  return g;
+}
+
+// ============================================================
+// MODEL: HIGH-PRECISION ANTI-PERSONNEL MINE
+// ============================================================
+function makeMine(){
+  const g=new THREE.Group();
+  const DS=THREE.DoubleSide;
+
+  // Main body: wide squat cylinder
+  const bm=new THREE.MeshStandardMaterial({color:0x4e6b2a,roughness:0.7,metalness:0.4,side:DS});
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.53,0.14,56),bm);
+  body.position.y=0.07; body.castShadow=true; g.add(body);
+
+  // Bottom reinforcement ring
+  const brm=new THREE.MeshStandardMaterial({color:0x3e5a1a,roughness:0.55,metalness:0.5,side:DS});
+  const brim=new THREE.Mesh(new THREE.TorusGeometry(0.52,0.028,8,56),brm);
+  brim.position.y=0.02; brim.rotation.x=Math.PI/2; g.add(brim);
+
+  // Upper dome
+  const dm=new THREE.MeshStandardMaterial({color:0x556e35,roughness:0.6,metalness:0.35,side:DS});
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(0.46,40,24,0,Math.PI*2,0,Math.PI/3.5),dm);
+  dome.position.y=0.15; dome.scale.set(1,0.35,1); dome.castShadow=true; g.add(dome);
+
+  // 4 concentric pressure rings
+  const prm=new THREE.MeshStandardMaterial({color:0x3a5518,roughness:0.45,metalness:0.55,side:DS});
+  for(let r of[0.4,0.31,0.22,0.13]){
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(r,0.016,8,44),prm);
+    ring.position.y=0.175; ring.rotation.x=Math.PI/2; g.add(ring);
+  }
+
+  // Center detonator
+  const cdm=new THREE.MeshStandardMaterial({color:0x2a3d0a,roughness:0.35,metalness:0.7,side:DS});
+  const cap=new THREE.Mesh(new THREE.CylinderGeometry(0.065,0.085,0.045,20),cdm);
+  cap.position.y=0.2; g.add(cap);
+  const capDome=new THREE.Mesh(new THREE.SphereGeometry(0.065,10,8,0,Math.PI*2,0,Math.PI/3),cdm);
+  capDome.position.y=0.222; capDome.scale.set(1,0.3,1); g.add(capDome);
+
+  // Grooved side ridges
+  for(let i=0;i<14;i++){
+    const a=(i/14)*Math.PI*2;
+    const ridge=new THREE.Mesh(new THREE.BoxGeometry(0.025,0.09,0.018),new THREE.MeshStandardMaterial({color:0x3e5b1a,roughness:0.75,metalness:0.3,side:DS}));
+    ridge.position.set(Math.cos(a)*0.5,0.08,Math.sin(a)*0.5); ridge.rotation.y=a; g.add(ridge);
+  }
+
+  // 3 side handle brackets
+  for(let i=0;i<3;i++){
+    const a=(i/3)*Math.PI*2+Math.PI/6;
+    const hb=new THREE.Mesh(new THREE.TorusGeometry(0.16,0.022,6,10,Math.PI),new THREE.MeshStandardMaterial({color:0x3a5a18,roughness:0.6,metalness:0.5,side:DS}));
+    hb.position.set(Math.cos(a)*0.48,0.1,Math.sin(a)*0.48); hb.rotation.z=Math.PI/2; hb.rotation.y=a; g.add(hb);
+  }
+
+  // Rim bolts (8)
+  const btm=new THREE.MeshStandardMaterial({color:0x2a3d0a,roughness:0.25,metalness:0.8,side:DS});
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2;
+    const bt=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.02,0.018,8),btm);
+    bt.position.set(Math.cos(a)*0.55,0.025,Math.sin(a)*0.55); g.add(bt);
+  }
+  // Top bolts (6)
+  for(let i=0;i<6;i++){
+    const a=(i/6)*Math.PI*2;
+    const bt=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.016,0.01,6),btm);
+    bt.position.set(Math.cos(a)*0.33,0.2,Math.sin(a)*0.33); g.add(bt);
+  }
+
+  // Glowing skull sprite
+  const cv=document.createElement('canvas');cv.width=128;cv.height=128;
+  const cx=cv.getContext('2d');
+  const grd=cx.createRadialGradient(64,64,8,64,64,55);
+  grd.addColorStop(0,'rgba(255,30,30,0.85)');grd.addColorStop(0.5,'rgba(200,0,0,0.25)');grd.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=grd;cx.fillRect(0,0,128,128);
+  cx.shadowColor='#f00';cx.shadowBlur=18;
+  cx.font='bold 50px serif';cx.fillStyle='#f44';cx.textAlign='center';cx.textBaseline='middle';cx.fillText('💀',64,64);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,blending:THREE.AdditiveBlending}));
+  sp.position.y=0.34;sp.scale.set(0.5,0.5,1);g.add(sp);
+  g.userData.skull=sp;
+
+  return g;
+}
+
+// ============================================================
+// MODEL: HIGH-PRECISION FLAG
+// ============================================================
+function makeFlag(){
+  const g=new THREE.Group();
+  const pm=new THREE.MeshStandardMaterial({color:0x888888,roughness:0.22,metalness:0.88});
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.02,0.95,14),pm);
+  pole.position.y=0.475; pole.castShadow=true; g.add(pole);
+  for(let i=0;i<3;i++){const r=new THREE.Mesh(new THREE.TorusGeometry(0.022,0.005,6,14),new THREE.MeshStandardMaterial({color:0x999,roughness:0.15,metalness:0.92}));r.position.y=0.22+i*0.24;r.rotation.x=Math.PI/2;g.add(r)}
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(0.024,10,10),new THREE.MeshStandardMaterial({color:0xbbb,roughness:0.12,metalness:0.92}));
+  ball.position.y=0.95; g.add(ball);
+  // Main flag fabric
+  const fg=new THREE.PlaneGeometry(0.3,0.2,10,6);
+  const fm=new THREE.MeshStandardMaterial({color:0xcc2222,roughness:0.85,metalness:0.04,side:THREE.DoubleSide});
+  const flag=new THREE.Mesh(fg,fm); flag.position.set(0.14,0.66,0); flag.castShadow=true; g.add(flag);
+  // Unit marker flag
+  const fg2=new THREE.PlaneGeometry(0.15,0.1,6,4);
+  const fm2=new THREE.MeshStandardMaterial({color:0xddcc00,roughness:0.85,metalness:0.04,side:THREE.DoubleSide});
+  const flag2=new THREE.Mesh(fg2,fm2); flag2.position.set(0.08,0.5,0); flag2.castShadow=true; g.add(flag2);
+  // Base
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.03,14),new THREE.MeshStandardMaterial({color:0x666,roughness:0.35,metalness:0.72}));
+  base.position.y=0.015; g.add(base);
+  g.userData.fg=fg; g.userData.fg2=fg2;
+  return g;
+}
+
+// ============================================================
+// MODEL: PAPER SCROLL (emerges from ground)
+// ============================================================
+function makePaper(num){
+  const g=new THREE.Group();
+  const cv=document.createElement('canvas');cv.width=256;cv.height=256;
+  const cx=cv.getContext('2d');
+  // Aged paper texture
+  cx.fillStyle='#f0e0b8';cx.fillRect(0,0,256,256);
+  for(let i=0;i<4000;i++){const a=Math.random()*0.1;cx.fillStyle=`rgba(${155+Math.random()*45},${115+Math.random()*35},${65+Math.random()*35},${a})`;cx.fillRect(Math.random()*256,Math.random()*256,2,2)}
+  const grd=cx.createRadialGradient(128,128,30,128,128,145);
+  grd.addColorStop(0,'rgba(0,0,0,0)');grd.addColorStop(0.55,'rgba(0,0,0,0)');grd.addColorStop(1,'rgba(0,0,0,0.38)');
+  cx.fillStyle=grd;cx.fillRect(0,0,256,256);
+  cx.strokeStyle='rgba(139,119,80,0.18)';cx.lineWidth=1;cx.setLineDash([5,6]);cx.strokeRect(18,18,220,220);
+  if(num>0){
+    const clrs=['','#0000CC','#008800','#CC0000','#000088','#880000','#008888','#000','#666'];
+    cx.shadowColor='rgba(0,0,0,0.22)';cx.shadowBlur=3;cx.shadowOffsetX=2;cx.shadowOffsetY=2;
+    cx.font='bold 95px "Courier New",monospace';cx.fillStyle=clrs[num]||'#000';cx.textAlign='center';cx.textBaseline='middle';cx.fillText(num+'',128,134);
+    cx.shadowBlur=0;
+  }
+  const tex=new THREE.CanvasTexture(cv);
+
+  // Flat horizontal paper (lying on ground)
+  const pg=new THREE.PlaneGeometry(0.5,0.5,6,6);
+  // Slight curl/warp for realism
+  const pp=pg.attributes.position;
+  for(let i=0;i<pp.count;i++){const x=pp.getX(i),y=pp.getY(i);pp.setZ(i,0.025*Math.sin((x+y)*4)+0.02*Math.cos(x*6))}
+  pp.needsUpdate=true;pg.computeVertexNormals();
+
+  const pm=new THREE.MeshStandardMaterial({map:tex,roughness:1,metalness:0,side:THREE.DoubleSide,transparent:true,opacity:0.93});
+  const paper=new THREE.Mesh(pg,pm);
+  paper.rotation.x=-Math.PI/2; // Lie flat on ground
+  paper.position.y=0.012; paper.receiveShadow=true; g.add(paper);
+
+  // Subtle shadow/dirt rim under paper
+  const rim=new THREE.Mesh(new THREE.RingGeometry(0.22,0.26,32),new THREE.MeshBasicMaterial({color:0x000000,side:THREE.DoubleSide,transparent:true,opacity:0.15,depthWrite:false}));
+  rim.rotation.x=-Math.PI/2; rim.position.y=0.006; g.add(rim);
+
+  return g;
+}
+
+// ============================================================
+// GRID SETUP
+// ============================================================
+const world=new THREE.Group();scene.add(world);
+
+function initGrid(diff){
+  while(world.children.length)world.remove(world.children[0]);
+  const cfg=DIFF[diff];
+  G.diff=diff;G.rows=cfg.rows;G.cols=cfg.cols;G.mines=cfg.mines;
+  G.grid=[];G.flags=0;G.revealed=0;G.firstClick=true;G.over=false;G.won=false;G.timer=0;
+  if(G.timerId){clearInterval(G.timerId);G.timerId=null}
+  document.getElementById('mc').textContent=cfg.mines;
+  document.getElementById('fc').textContent='0';document.getElementById('tm').textContent='000';
+
+  for(let r=0;r<cfg.rows;r++){
+    G.grid[r]=[];
+    for(let c=0;c<cfg.cols;c++){
+      const {x,z}=cellPos(r,c);
+      // Place ground marker ring
+      const ring=makeRing();ring.position.set(x,0,z);world.add(ring);
+      G.grid[r][c]={
+        mine:false,revealed:false,flagged:false,adjacent:0,row:r,col:c,
+        ring:ring,  // reference to the marker ring
+        model:null, // mine/paper/flag model when revealed
+      };
+    }
+  }
+  rebuildRingMeshes();
+}
+
+function placeMines(er,ec){
+  const {rows,cols,mines}=G;
+  let p=0;
+  while(p<mines){
+    const r=Math.floor(Math.random()*rows),c=Math.floor(Math.random()*cols);
+    if(G.grid[r][c].mine)continue;
+    if(Math.abs(r-er)<=1&&Math.abs(c-ec)<=1)continue;
+    G.grid[r][c].mine=true;p++;
+  }
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    if(G.grid[r][c].mine)continue;
+    let n=0;
+    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+      if(!dr&&!dc)continue;
+      const nr=r+dr,nc=c+dc;
+      if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&G.grid[nr][nc].mine)n++;
+    }
+    G.grid[r][c].adjacent=n;
+  }
+}
+
+// ============================================================
+// GAME LOGIC
+// ============================================================
+function revealAt(r,c){
+  if(G.over)return;
+  const cell=G.grid[r]?.[c];
+  if(!cell||cell.revealed||cell.flagged)return;
+  // Clean up hover highlight if on this cell
+  if(hl&&hl.userData.r===r&&hl.userData.c===c){world.remove(hl);hl=null}
+  if(G.firstClick){G.firstClick=false;placeMines(r,c);G.startTime=Date.now();G.timerId=setInterval(updateTimer,100)}
+
+  const {rows,cols}=G;
+  const q=[{r,c}];const seen=new Set();
+  while(q.length){
+    const {r,c}=q.shift();const k=`${r},${c}`;
+    if(seen.has(k))continue;seen.add(k);
+    const cell=G.grid[r]?.[c];
+    if(!cell||cell.revealed||cell.flagged)continue;
+    cell.revealed=true;G.revealed++;
+    // Remove marker ring
+    if(cell.ring){world.remove(cell.ring);cell.ring=null}
+    if(cell.mine){showMine(r,c);loseWithDelay();return}
+    showPaper(r,c,cell.adjacent);
+    if(cell.adjacent===0)for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;const nr=r+dr,nc=c+dc;if(nr>=0&&nr<rows&&nc>=0&&nc<cols)q.push({r:nr,c:nc})}
+  }
+  rebuildRingMeshes();
+  checkWin();
+}
+
+// Helper: dim/restore ring for flagged cells (keep clickable)
+function setRingDim(ring, dim){
+  if(!ring)return;
+  ring.traverse(ch=>{
+    if(!ch.isMesh)return;
+    if(dim){ch.material=ch.material.clone();ch.material.transparent=true;ch.material.opacity=0.12;ch.material.depthWrite=false}
+    else{ch.material.opacity=1;ch.material.transparent=false;ch.material.depthWrite=true;ch.material.needsUpdate=true}
+  });
+}
+
+function flagAt(r,c){
+  if(G.over)return;
+  const cell=G.grid[r]?.[c];
+  if(!cell||cell.revealed)return;
+  // Clean up hover
+  if(hl&&hl.userData.r===r&&hl.userData.c===c){world.remove(hl);hl=null}
+  if(cell.flagged){
+    cell.flagged=false;G.flags--;
+    if(cell.model){world.remove(cell.model);cell.model=null}
+    // Restore ring to full visibility
+    if(cell.ring)setRingDim(cell.ring,false);
+    else{cell.ring=makeRing();const {x,z}=cellPos(r,c);cell.ring.position.set(x,0,z);world.add(cell.ring)}
+  }else{
+    cell.flagged=true;G.flags++;
+    // Dim ring but keep it clickable for unflag
+    if(cell.ring)setRingDim(cell.ring,true);
+    const flag=makeFlag();const {x,z}=cellPos(r,c);flag.position.set(x,0,z);world.add(flag);cell.model=flag;
+  }
+  rebuildRingMeshes();
+  document.getElementById('fc').textContent=G.flags;
+}
+
+function showMine(r,c){
+  const cell=G.grid[r][c];if(cell.model)return;
+  const mine=makeMine();const {x,z}=cellPos(r,c);
+  mine.position.set(x,0,z);mine.scale.set(1.2,1.2,1.2);
+  mine.userData.springY=0;mine.userData.springV=0;mine.userData.targetY=0.8;
+  mine.userData.springing=true;mine.userData.spinTime=0;
+  world.add(mine);cell.model=mine;
+  // Explosion particles
+  const n=40;const geo=new THREE.BufferGeometry();
+  const pos=new Float32Array(n*3),clr=new Float32Array(n*3),vel=[];
+  for(let i=0;i<n;i++){
+    pos[i*3]=x+(Math.random()-0.5)*0.3;pos[i*3+1]=0.7+Math.random()*0.6;pos[i*3+2]=z+(Math.random()-0.5)*0.3;
+    clr[i*3]=1;clr[i*3+1]=0.2+Math.random()*0.5;clr[i*3+2]=0.04;
+    vel.push({x:(Math.random()-0.5)*3.8,y:1.5+Math.random()*4,z:(Math.random()-0.5)*3.8});
+  }
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(clr,3));
+  const pts=new THREE.Points(geo,new THREE.PointsMaterial({size:0.12,vertexColors:true,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false}));
+  pts.userData.vel=vel;pts.userData.life=1;scene.add(pts);
+  const iv=setInterval(()=>{if(pts.userData.life<=0){scene.remove(pts);clearInterval(iv);return}pts.userData.life-=0.016;const p2=pts.geometry.attributes.position;for(let i=0;i<n;i++){p2.array[i*3]+=vel[i].x*0.016;p2.array[i*3+1]+=vel[i].y*0.016-0.0035;p2.array[i*3+2]+=vel[i].z*0.016;vel[i].y-=0.11}p2.needsUpdate=true;pts.material.opacity=pts.userData.life},16);
+  bloom.strength=1.7;setTimeout(()=>{bloom.strength=0.25},800);
+}
+
+function showPaper(r,c,num){
+  const cell=G.grid[r][c];if(cell.model)return;
+  const paper=makePaper(num);const {x,z}=cellPos(r,c);
+  paper.position.set(x,-0.3,z);world.add(paper);cell.model=paper;
+  paper.userData.rising=true;paper.userData.targetY=0.018;
+  paper.userData.rspeed=0.8+Math.random()*0.4;
+  paper.userData.fphase=Math.random()*Math.PI*2;
+  risingCount++;
+}
+
+// ============================================================
+// GAME OVER / WIN
+// ============================================================
+function loseWithDelay(){
+  G.over=true;if(G.timerId){clearInterval(G.timerId);G.timerId=null}
+  // Show remaining mines after a brief pause
+  setTimeout(()=>{
+    for(let rr=0;rr<G.rows;rr++)for(let cc=0;cc<G.cols;cc++){
+      const cl=G.grid[rr][cc];
+      if(cl.mine&&!cl.revealed&&!cl.flagged){cl.revealed=true;if(cl.ring){world.remove(cl.ring);cl.ring=null}showMine(rr,cc)}
+    }
+  },300);
+  // Show game-over panel after mines are fully visible
+  setTimeout(()=>{
+    document.getElementById('rt').className='lose';
+    document.getElementById('rt').textContent='💥 踩雷！';
+    document.getElementById('rd').textContent='你踩到了地雷，任务失败';
+    document.getElementById('game-over').classList.add('visible');
+    if(pointerLocked)document.exitPointerLock();
+  },1800);
+}
+
+function gameOver(win){
+  G.over=true;if(G.timerId){clearInterval(G.timerId);G.timerId=null}
+  if(win){G.won=true;document.getElementById('rt').className='win';document.getElementById('rt').textContent='🎉 胜利！';document.getElementById('rd').textContent=`清除了全部${G.mines}颗地雷！用时 ${G.timer} 秒`;document.getElementById('game-over').classList.add('visible');for(let r=0;r<G.rows;r++)for(let c=0;c<G.cols;c++){const cl=G.grid[r][c];if(cl.mine&&!cl.revealed&&!cl.flagged){cl.revealed=true;if(cl.ring){world.remove(cl.ring);cl.ring=null}showMine(r,c)}}bloom.strength=1.3;setTimeout(()=>{bloom.strength=0.25},1200)}
+  else{document.getElementById('rt').className='lose';document.getElementById('rt').textContent='💥 踩雷！';document.getElementById('rd').textContent='你踩到了地雷，任务失败';document.getElementById('game-over').classList.add('visible');for(let r=0;r<G.rows;r++)for(let c=0;c<G.cols;c++){const cl=G.grid[r][c];if(cl.mine&&!cl.revealed&&!cl.flagged){cl.revealed=true;if(cl.ring){world.remove(cl.ring);cl.ring=null}showMine(r,c)}}
+  }
+  if(pointerLocked)document.exitPointerLock();
+}
+function checkWin(){if(G.revealed>=G.rows*G.cols-G.mines)gameOver(true)}
+function updateTimer(){if(G.over)return;G.timer=Math.floor((Date.now()-G.startTime)/1000);document.getElementById('tm').textContent=String(G.timer).padStart(3,'0')}
+
+// ============================================================
+// INPUT
+// ============================================================
+const keys={w:false,a:false,s:false,d:false};
+document.addEventListener('keydown',e=>{if(e.key in keys){keys[e.key]=true;e.preventDefault()}});
+document.addEventListener('keyup',e=>{if(e.key in keys){keys[e.key]=false;e.preventDefault()}});
+
+const ray=new THREE.Raycaster();
+// Cached ring meshes — rebuilt only on grid change (reveal/flag/init)
+let ringMeshes=[];
+function rebuildRingMeshes(){
+  ringMeshes=[];
+  for(let r=0;r<G.rows;r++)for(let c=0;c<G.cols;c++){
+    const cell=G.grid[r]?.[c];
+    if(!cell||cell.revealed||!cell.ring||!cell.ring.visible)continue;
+    cell.ring.traverse(ch=>{if(ch.isMesh){ch.userData.rc={r,c};ringMeshes.push(ch)}});
+  }
+}
+function hitRing(){
+  if(!ringMeshes.length)return null;
+  ray.setFromCamera(new THREE.Vector2(0,0),camera);
+  const ix=ray.intersectObjects(ringMeshes,false);
+  if(ix.length){const rc=ix[0].object.userData.rc;if(rc)return rc}
+  return null;
+}
+
+document.addEventListener('mousedown',e=>{
+  if(!pointerLocked||mobileMode||G.over)return;
+  if(e.button===0){const h=hitRing();if(h)revealAt(h.r,h.c)}
+  else if(e.button===2){const h=hitRing();if(h)flagAt(h.r,h.c)}
+});
+document.addEventListener('contextmenu',e=>e.preventDefault());
+
+// ============================================================
+// STEP-ON DETECTION
+// ============================================================
+let stepT=null,stepP=0;
+function getUnder(){
+  const p=camera.position;
+  // Convert world position to grid coordinates — O(1) lookup
+  const tw=G.cols*CELL,th=G.rows*CELL;
+  const gr=Math.round((p.z+th/2-CELL/2)/CELL);
+  const gc=Math.round((p.x+tw/2-CELL/2)/CELL);
+  // Only check the 9 cells around estimated grid position
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+    const nr=gr+dr,nc=gc+dc;
+    if(nr<0||nr>=G.rows||nc<0||nc>=G.cols)continue;
+    const cell=G.grid[nr]?.[nc];
+    if(!cell||cell.revealed||cell.flagged)continue;
+    const {x,z}=cellPos(nr,nc);
+    const d=Math.sqrt((p.x-x)**2+(p.z-z)**2);
+    if(d<TRIGGER)return{r:nr,c:nc,dist:d};
+  }
+  return null;
+}
+
+// ============================================================
+// MOVEMENT
+// ============================================================
+function updateMove(dt){
+  if(!pointerLocked&&!mobileMode||G.over)return;
+  const fwd=new THREE.Vector3();camera.getWorldDirection(fwd);fwd.y=0;fwd.normalize();
+  const right=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+  const mv=new THREE.Vector3();
+  if(keys.w)mv.add(fwd);if(keys.s)mv.sub(fwd);if(keys.a)mv.sub(right);if(keys.d)mv.add(right);
+  if(mv.length()>0){mv.normalize().multiplyScalar(SPEED*dt);camera.position.add(mv);camera.position.y=1.7}
+  const bw=(G.cols*CELL)/2+4,bh=(G.rows*CELL)/2+4;
+  camera.position.x=Math.max(-bw,Math.min(bw,camera.position.x));
+  camera.position.z=Math.max(-bh,Math.min(bh,camera.position.z));
+}
+
+// ============================================================
+// ANIMATIONS
+// ============================================================
+let flagFrame=0;
+function animFlags(time){
+  if((++flagFrame)%3!==0)return; // Throttle: update every 3 frames
+  for(let r=0;r<G.rows;r++)for(let c=0;c<G.cols;c++){
+    const cell=G.grid[r]?.[c];if(!cell?.flagged||!cell.model)continue;
+    [cell.model.userData.fg,cell.model.userData.fg2].forEach(fg=>{if(!fg)return;
+      const p=fg.attributes.position;
+      for(let i=0;i<p.count;i++){const x=p.getX(i);p.setZ(i,Math.sin(x*18+time*2.5)*0.022+Math.sin(x*10+time*1.8)*0.016+Math.sin(x*26+time*3.3)*0.009)}
+      p.needsUpdate=true;
+    });
+  }
+}
+let risingCount=0; // Track papers still animating
+function animPapers(dt){
+  if(!risingCount)return; // No papers rising — skip
+  risingCount=0;
+  for(let r=0;r<G.rows;r++)for(let c=0;c<G.cols;c++){
+    const cell=G.grid[r]?.[c];if(!cell?.revealed||cell.mine||!cell.model)continue;
+    const m=cell.model;
+    if(m.userData.rising){const y=m.position.y+dt*m.userData.rspeed;if(y>=m.userData.targetY){m.position.y=m.userData.targetY;m.userData.rising=false}else{risingCount++;m.position.y=y}}
+  }
+}
+function animDust(time){
+  if((flagFrame+1)%2!==0)return; // Throttle: every 2 frames
+  const p=dust.geometry.attributes.position;
+  for(let i=0;i<dN;i++){p.array[i*3]+=Math.sin(time*0.1+i)*0.0007;p.array[i*3+1]+=Math.sin(time*0.12+i*1.3)*0.0003;p.array[i*3+2]+=Math.cos(time*0.08+i*0.7)*0.0007;if(Math.abs(p.array[i*3])>30)p.array[i*3]*=-0.9;if(Math.abs(p.array[i*3+1])>4)p.array[i*3+1]*=-0.9;if(Math.abs(p.array[i*3+2])>30)p.array[i*3+2]*=-0.9}
+  p.needsUpdate=true;
+}
+
+// Mine spring-up + spin animation
+function animMines(dt,time){
+  for(let r=0;r<G.rows;r++)for(let c=0;c<G.cols;c++){
+    const cell=G.grid[r]?.[c];if(!cell?.revealed||!cell.mine||!cell.model)continue;
+    const m=cell.model;if(!m.userData.springing&&!m.userData.spinTime)continue;
+    // Spring up from ground
+    if(m.userData.springing){
+      const diff=m.userData.targetY-m.userData.springY;
+      m.userData.springV+=diff*12*dt;m.userData.springV*=0.85;
+      m.userData.springY+=m.userData.springV*dt;
+      if(Math.abs(diff)<0.005&&Math.abs(m.userData.springV)<0.01){
+        m.userData.springY=m.userData.targetY;
+        m.userData.springing=false;
+      }
+      m.position.y=m.userData.springY;
+    }
+    // Spin
+    m.userData.spinTime+=dt;
+    if(m.userData.spinTime<3){
+      const speed=2.5-Math.min(m.userData.spinTime*0.7,2);
+      m.rotation.y+=dt*speed;
+      // Gentle tilt so sides are visible
+      m.rotation.x=Math.sin(m.userData.spinTime*1.5)*0.15;
+    }
+  }
+}
+
+// Hover highlight
+let hl=null;
+function updateHL(){
+  if(G.over||!G.diff){if(hl){world.remove(hl);hl=null}return}
+  const h=hitRing();
+  if(h){const{r,c}=h;const cell=G.grid[r]?.[c];if(cell&&!cell.revealed&&!cell.flagged){if(!hl||hl.userData.r!==r||hl.userData.c!==c){if(hl)world.remove(hl);const {x,z}=cellPos(r,c);const hm=new THREE.Mesh(new THREE.RingGeometry(RING_R*0.95,RING_R+0.03,48),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,opacity:0.35,depthTest:true,depthWrite:false}));hm.rotation.x=-Math.PI/2;hm.position.set(x,0.018,z);hm.userData={r,c};world.add(hm);hl=hm}return}}
+  if(hl){world.remove(hl);hl=null}
+}
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight)});
+
+// ============================================================
+// GLOBAL
+// ============================================================
+window.startGame=d=>{
+  document.getElementById('menu-screen').classList.add('hidden');
+  document.getElementById('hud').classList.add('on');
+  document.getElementById('loading').classList.remove('hidden');
+  initGrid(d);
+  const bw=(G.cols*CELL)/2,bh=(G.rows*CELL)/2;
+  camera.position.set(-bw-2,1.7,-bh-2);
+  yaw=Math.atan2(bh/3,bw/3); pitch=-0.15; updateCam();
+  document.getElementById('loading').classList.add('hidden');
+  if(!mobileMode)document.getElementById('instructions').classList.add('on');
+  if(mobileMode)document.getElementById('mobile-controls').classList.add('active');
+  if(!mobileMode)can.requestPointerLock();
+};
+window.restartGame=()=>{document.getElementById('game-over').classList.remove('visible');window.startGame(G.diff)};
+window.backToMenu=()=>{document.getElementById('game-over').classList.remove('visible');document.getElementById('hud').classList.remove('on');document.getElementById('menu-screen').classList.remove('hidden');document.getElementById('mobile-controls').classList.remove('active');G.diff=null;while(world.children.length)world.remove(world.children[0]);if(pointerLocked)document.exitPointerLock()};
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+const clock=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.1);
+  const time=clock.getElapsedTime();
+  updateCam();updateMove(dt);updateHL();
+
+  // Step-on detection
+  const under=getUnder();
+  const hint=document.getElementById('step-hint');
+  if(under&&!G.over){
+    if(stepT&&stepT.r===under.r&&stepT.c===under.c){stepP+=dt;hint.style.display='flex';hint.querySelector('.bar').style.width=Math.min(stepP*100/0.35,100)+'%';if(stepP>=0.35){revealAt(under.r,under.c);stepP=0;stepT=null;hint.style.display='none'}}
+    else{stepT=under;stepP=0;hint.style.display='flex';hint.querySelector('.bar').style.width='0%'}
+  }else{stepT=null;stepP=0;hint.style.display='none'}
+
+  animFlags(time);animPapers(dt);animDust(time);animMines(dt,time);
+  if(bloom.strength>0.25)bloom.strength+=(0.25-bloom.strength)*0.035;
+  composer.render();
+}
+animate();
+document.getElementById('loading').classList.add('hidden');
+console.log('⚔ 3D扫雷 · 战场行动 已就绪');
+
+// ============================================================
+// MOBILE CONTROLS
+// ============================================================
+if(mobileMode){
+  (function(){
+    // --- Virtual Joystick ---
+    const jZone=document.getElementById('joystick-zone');
+    const jThumb=document.getElementById('joystick-thumb');
+    let jTouchId=null;
+    const jMax=40;
+    function jUpd(t){
+      const r=jZone.getBoundingClientRect();
+      const cx=r.left+r.width/2,cy=r.top+r.height/2;
+      let dx=t.clientX-cx,dy=t.clientY-cy;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d>jMax){dx=dx/d*jMax;dy=dy/d*jMax}
+      jThumb.style.transform=`translate(${-50+dx/jMax*50}%,${-50+dy/jMax*50}%)`;
+      const th=jMax*0.3;
+      keys.w=dy<-th;keys.s=dy>th;keys.a=dx<-th;keys.d=dx>th;
+    }
+    function jRst(){jTouchId=null;jThumb.style.transform='translate(-50%,-50%)';keys.w=keys.a=keys.s=keys.d=false}
+    jZone.addEventListener('touchstart',e=>{e.preventDefault();if(jTouchId===null&&e.changedTouches.length){jTouchId=e.changedTouches[0].identifier;jUpd(e.changedTouches[0])}},{passive:false});
+    jZone.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches)if(t.identifier===jTouchId)jUpd(t)},{passive:false});
+    jZone.addEventListener('touchend',e=>{for(const t of e.changedTouches)if(t.identifier===jTouchId)jRst()});
+    jZone.addEventListener('touchcancel',jRst);
+
+    // --- Touch Look ---
+    const lZone=document.getElementById('look-zone');
+    let lTouchId=null,lLx=0,lLy=0;
+    lZone.addEventListener('touchstart',e=>{
+      if(lTouchId!==null||!e.changedTouches.length)return;
+      const t=e.changedTouches[0];
+      if(t.identifier===jTouchId)return;
+      lTouchId=t.identifier;lLx=t.clientX;lLy=t.clientY;
+    });
+    lZone.addEventListener('touchmove',e=>{
+      for(const t of e.changedTouches){
+        if(t.identifier===lTouchId){
+          e.preventDefault();
+          const dx=t.clientX-lLx,dy=t.clientY-lLy;
+          lLx=t.clientX;lLy=t.clientY;
+          yaw-=dx*0.005;pitch=Math.max(PITCH_MIN,Math.min(PITCH_MAX,pitch-dy*0.005));
+        }
+      }
+    },{passive:false});
+    function lEnd(e){for(const t of(e?.changedTouches||[]))if(t.identifier===lTouchId){lTouchId=null;return}}
+    lZone.addEventListener('touchend',lEnd);
+    lZone.addEventListener('touchcancel',()=>{lTouchId=null});
+
+    // --- Action Buttons ---
+    function act(fn){
+      if(G.over||!G.diff)return;
+      const h=hitRing();
+      if(h)fn(h.r,h.c);
+    }
+    document.getElementById('btn-reveal').addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();act(revealAt)},{passive:false});
+    document.getElementById('btn-flag').addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();act(flagAt)},{passive:false});
+
+    // Prevent canvas zoom/scroll on mobile
+    can.addEventListener('touchstart',e=>{if(G.diff&&!G.over)e.preventDefault()},{passive:false});
+
+    // --- Orientation lock: portrait → show rotate overlay ---
+    const rotOverlay=document.getElementById('rotate-overlay');
+    function checkOrientation(){
+      if(window.innerWidth<window.innerHeight){
+        rotOverlay.classList.add('visible');
+        // Pause timer while in portrait
+        if(G.timerId&&!G.over&&!G._pausedForRotate){
+          G._pausedForRotate=true;
+          clearInterval(G.timerId);G.timerId=null;
+        }
+      }else{
+        rotOverlay.classList.remove('visible');
+        if(G._pausedForRotate){
+          G._pausedForRotate=false;
+          if(!G.over&&G.startTime){
+            G.timer=Math.floor((Date.now()-G.startTime)/1000);
+            G.timerId=setInterval(updateTimer,100);
+          }
+        }
+      }
+    }
+    checkOrientation();
+    window.addEventListener('resize',checkOrientation);
+    window.addEventListener('orientationchange',()=>setTimeout(checkOrientation,400));
+  })();
+}
+</script>
+</body>
+</html>
