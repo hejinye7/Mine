@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>地雷模型查看器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#0a0a0a;font-family:'Segoe UI','Microsoft YaHei',sans-serif}
+canvas{display:block}
+#info{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:#555;font-size:12px;background:rgba(0,0,0,0.6);padding:8px 16px;border-radius:6px;border:1px solid #222;pointer-events:none;z-index:10}
+#title{position:fixed;top:20px;left:50%;transform:translateX(-50%);color:#e94560;font-size:18px;letter-spacing:4px;background:rgba(0,0,0,0.6);padding:10px 24px;border-radius:8px;border:1px solid rgba(233,69,96,0.2);pointer-events:none;z-index:10;text-shadow:0 0 20px rgba(233,69,96,0.3)}
+</style>
+</head>
+<body>
+
+<div id="title">💣 反步兵地雷 3D 模型</div>
+<div id="info">🖱 拖拽旋转 · 滚轮缩放</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// Scene
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x111115);
+
+const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,0.1,10);
+camera.position.set(1.8,1.2,1.8);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.2;
+document.body.prepend(renderer.domElement);
+
+// Controls
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(0,0.35,0);
+controls.enableDamping=true;
+controls.dampingFactor=0.08;
+controls.autoRotate=true;
+controls.autoRotateSpeed=1.8;
+controls.minDistance=0.6;
+controls.maxDistance=4;
+controls.update();
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x404060,0.6));
+scene.add(new THREE.HemisphereLight(0x87CEEB,0x6a5535,0.5));
+
+const sun=new THREE.DirectionalLight(0xFFE4B5,2.5);
+sun.position.set(3,5,-2);
+sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.near=0.3;sun.shadow.camera.far=8;
+sun.shadow.camera.left=-2;sun.shadow.camera.right=2;sun.shadow.camera.top=2;sun.shadow.camera.bottom=-2;
+scene.add(sun);
+
+const fill=new THREE.DirectionalLight(0x8899bb,0.4);
+fill.position.set(-2,1.5,2);
+scene.add(fill);
+
+// Ground ring for reference
+const RING_R=0.55;
+function makeRing(){
+  const g=new THREE.Group();
+  const rm=new THREE.MeshStandardMaterial({color:0x6a6a5a,roughness:0.4,metalness:0.7});
+  const r1=new THREE.Mesh(new THREE.TorusGeometry(RING_R,0.015,6,24),rm);
+  r1.rotation.x=Math.PI/2;r1.position.y=0.01;r1.receiveShadow=true;g.add(r1);
+  const r2=new THREE.Mesh(new THREE.TorusGeometry(RING_R*0.7,0.008,4,16),new THREE.MeshStandardMaterial({color:0x5a5a4a,roughness:0.5,metalness:0.6}));
+  r2.rotation.x=Math.PI/2;r2.position.y=0.008;g.add(r2);
+  const dot=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.005,6),new THREE.MeshStandardMaterial({color:0x888877,roughness:0.3,metalness:0.8}));
+  dot.position.y=0.005;g.add(dot);
+  return g;
+}
+const ring=makeRing();
+ring.position.set(0,0,0);
+scene.add(ring);
+
+// Ground plane (subtle)
+const gnd=new THREE.Mesh(new THREE.PlaneGeometry(4,4),new THREE.MeshStandardMaterial({color:0x222228,roughness:1,metalness:0}));
+gnd.rotation.x=-Math.PI/2;gnd.position.y=-0.02;gnd.receiveShadow=true;
+scene.add(gnd);
+
+// ============================================================
+// MINE MODEL (from game.html)
+// ============================================================
+function makeMine(){
+  const g=new THREE.Group();
+  const DS=THREE.DoubleSide;
+
+  // Main body: wide squat cylinder
+  const bm=new THREE.MeshStandardMaterial({color:0x4e6b2a,roughness:0.7,metalness:0.4,side:DS});
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.53,0.14,56),bm);
+  body.position.y=0.07;body.castShadow=true;g.add(body);
+
+  // Bottom reinforcement ring
+  const brm=new THREE.MeshStandardMaterial({color:0x3e5a1a,roughness:0.55,metalness:0.5,side:DS});
+  const brim=new THREE.Mesh(new THREE.TorusGeometry(0.52,0.028,8,56),brm);
+  brim.position.y=0.02;brim.rotation.x=Math.PI/2;g.add(brim);
+
+  // Upper dome
+  const dm=new THREE.MeshStandardMaterial({color:0x556e35,roughness:0.6,metalness:0.35,side:DS});
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(0.46,40,24,0,Math.PI*2,0,Math.PI/3.5),dm);
+  dome.position.y=0.15;dome.scale.set(1,0.35,1);dome.castShadow=true;g.add(dome);
+
+  // 4 concentric pressure rings
+  const prm=new THREE.MeshStandardMaterial({color:0x3a5518,roughness:0.45,metalness:0.55,side:DS});
+  for(let r of[0.4,0.31,0.22,0.13]){
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(r,0.016,8,44),prm);
+    ring.position.y=0.175;ring.rotation.x=Math.PI/2;g.add(ring);
+  }
+
+  // Center detonator
+  const cdm=new THREE.MeshStandardMaterial({color:0x2a3d0a,roughness:0.35,metalness:0.7,side:DS});
+  const cap=new THREE.Mesh(new THREE.CylinderGeometry(0.065,0.085,0.045,20),cdm);
+  cap.position.y=0.2;g.add(cap);
+  const capDome=new THREE.Mesh(new THREE.SphereGeometry(0.065,10,8,0,Math.PI*2,0,Math.PI/3),cdm);
+  capDome.position.y=0.222;capDome.scale.set(1,0.3,1);g.add(capDome);
+
+  // Grooved side ridges
+  for(let i=0;i<14;i++){
+    const a=(i/14)*Math.PI*2;
+    const ridge=new THREE.Mesh(new THREE.BoxGeometry(0.025,0.09,0.018),new THREE.MeshStandardMaterial({color:0x3e5b1a,roughness:0.75,metalness:0.3,side:DS}));
+    ridge.position.set(Math.cos(a)*0.5,0.08,Math.sin(a)*0.5);ridge.rotation.y=a;g.add(ridge);
+  }
+
+  // 3 side handle brackets
+  for(let i=0;i<3;i++){
+    const a=(i/3)*Math.PI*2+Math.PI/6;
+    const hb=new THREE.Mesh(new THREE.TorusGeometry(0.16,0.022,6,10,Math.PI),new THREE.MeshStandardMaterial({color:0x3a5a18,roughness:0.6,metalness:0.5,side:DS}));
+    hb.position.set(Math.cos(a)*0.48,0.1,Math.sin(a)*0.48);hb.rotation.z=Math.PI/2;hb.rotation.y=a;g.add(hb);
+  }
+
+  // Rim bolts (8)
+  const btm=new THREE.MeshStandardMaterial({color:0x2a3d0a,roughness:0.25,metalness:0.8,side:DS});
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2;
+    const bt=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.02,0.018,8),btm);
+    bt.position.set(Math.cos(a)*0.55,0.025,Math.sin(a)*0.55);g.add(bt);
+  }
+  // Top bolts (6)
+  for(let i=0;i<6;i++){
+    const a=(i/6)*Math.PI*2;
+    const bt=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.016,0.01,6),btm);
+    bt.position.set(Math.cos(a)*0.33,0.2,Math.sin(a)*0.33);g.add(bt);
+  }
+
+  // Glowing skull sprite
+  const cv=document.createElement('canvas');cv.width=128;cv.height=128;
+  const cx=cv.getContext('2d');
+  const grd=cx.createRadialGradient(64,64,8,64,64,55);
+  grd.addColorStop(0,'rgba(255,30,30,0.85)');grd.addColorStop(0.5,'rgba(200,0,0,0.25)');grd.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=grd;cx.fillRect(0,0,128,128);
+  cx.shadowColor='#f00';cx.shadowBlur=18;
+  cx.font='bold 50px serif';cx.fillStyle='#f44';cx.textAlign='center';cx.textBaseline='middle';cx.fillText('💀',64,64);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,blending:THREE.AdditiveBlending}));
+  sp.position.y=0.34;sp.scale.set(0.5,0.5,1);g.add(sp);
+  g.userData.skull=sp;
+
+  return g;
+}
+
+const mine=makeMine();
+mine.position.set(0,0.8,0);
+mine.scale.set(1.2,1.2,1.2);
+scene.add(mine);
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
